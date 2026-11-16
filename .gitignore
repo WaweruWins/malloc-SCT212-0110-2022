@@ -1,0 +1,5 @@
+test_myalloc
+bench
+t_asan
+*.o
+*.out
