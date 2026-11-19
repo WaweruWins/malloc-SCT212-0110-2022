@@ -169,18 +169,58 @@ void my_free(void *ptr)
     b->free = 1;
     coalesce();
 }
+/* ---------- Task 6: calloc and realloc ---------- */
 void *my_calloc(size_t nmemb, size_t size)
 {
-    (void)nmemb;
-    (void)size;
-    return NULL;
+    if (nmemb != 0 && size > SIZE_MAX / nmemb)
+        return NULL; /* nmemb * size would overflow */
+    size_t total = nmemb * size;
+    void *p = my_malloc(total);
+    if (p != NULL)
+        memset(p, 0, total);
+    return p;
 }
+
 void *my_realloc(void *ptr, size_t size)
 {
-    (void)ptr;
-    (void)size;
-    return NULL;
+    if (ptr == NULL)
+        return my_malloc(size);
+    if (size == 0)
+    {
+        my_free(ptr);
+        return NULL;
+    }
+    if (!valid_ptr(ptr) || header(ptr)->free || size > SIZE_MAX / 2)
+        return NULL;
+
+    block_t *b = header(ptr);
+    size_t need = align_up(size);
+
+    if (need <= b->size)
+    { /* still fits: shrink in place */
+        split(b, need);
+        coalesce(); /* new tail may touch a free block */
+        return ptr;
+    }
+    block_t *n = b->next;
+    if (n != NULL && n->free && adjacent(b, n) && b->size + HDR + n->size >= need)
+    {
+        b->size += HDR + n->size; /* absorb the free neighbour */
+        b->next = n->next;
+        n->magic = 0;
+        if (tail == n)
+            tail = b;
+        split(b, need);
+        return ptr;
+    }
+    void *np = my_malloc(size); /* otherwise move */
+    if (np == NULL)
+        return NULL;
+    memcpy(np, ptr, b->size < size ? b->size : size); /* copy min(old, new) */
+    my_free(ptr);
+    return np;
 }
+
 void heap_stats(heap_stats_t *out)
 {
     if (out)
