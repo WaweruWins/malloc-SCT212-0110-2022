@@ -73,12 +73,30 @@ static block_t *grow(size_t need)
     tail = b;
     return b;
 }
+/* ---------- Task 3: placement ---------- */
+static block_t *find_fit(size_t need)
+{
+    for (block_t *b = head; b != NULL; b = b->next)
+        if (b->free && b->size >= need)
+            return b;                                 /* first fit */
+    return NULL;
+}
 
 /* ---------- API stubs (each task replaces some of these) ---------- */
 void *my_malloc(size_t size)
 {
-    (void)size;
-    return NULL;
+    if (size == 0 || size > SIZE_MAX / 2)            /* 0 → NULL; huge → avoid overflow */
+        return NULL;
+    size_t need = align_up(size);
+
+    block_t *b = find_fit(need);
+    if (b == NULL) {
+        b = grow(need);
+        if (b == NULL)
+            return NULL;
+    }
+    b->free = 0;
+    return payload(b);                                /* the PAYLOAD, never the header */
 }
 void my_free(void *ptr) { (void)ptr; }
 void *my_calloc(size_t nmemb, size_t size)
