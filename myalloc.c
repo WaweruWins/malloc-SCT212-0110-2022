@@ -96,6 +96,43 @@ static void split(block_t *b, size_t need)
     if (tail == b)
         tail = rest;
 }
+/* ---------- Task 5: free and coalesce ---------- */
+static void msg(const char *s) /* no stdio inside the allocator */
+{
+    if (write(STDERR_FILENO, s, strlen(s)) < 0)
+    { /* nothing more we can do */
+    }
+}
+
+static void coalesce(void)
+{
+    block_t *b = head;
+    while (b != NULL && b->next != NULL)
+    {
+        block_t *n = b->next;
+        if (b->free && n->free && adjacent(b, n))
+        { /* list neighbours AND memory neighbours */
+            b->size += HDR + n->size;
+            b->next = n->next;
+            n->magic = 0; /* old header is now just payload */
+            if (tail == n)
+                tail = b;
+        }
+        else
+        {
+            b = n; /* only advance when nothing merged */
+        }
+    }
+}
+
+static int valid_ptr(void *ptr)
+{
+    if (head == NULL || (uintptr_t)ptr % ALIGN != 0)
+        return 0;
+    if ((char *)ptr < (char *)payload(head) || (char *)ptr >= (char *)sbrk(0))
+        return 0; /* outside our heap: don't touch it */
+    return header(ptr)->magic == MAGIC;
+}
 /* ---------- API stubs (each task replaces some of these) ---------- */
 void *my_malloc(size_t size)
 {
@@ -114,7 +151,24 @@ void *my_malloc(size_t size)
     b->free = 0;
     return payload(b); /* the PAYLOAD, never the header */
 }
-void my_free(void *ptr) { (void)ptr; }
+void my_free(void *ptr)
+{
+    if (ptr == NULL)
+        return;
+    if (!valid_ptr(ptr))
+    {
+        msg("my_free: invalid pointer\n");
+        return;
+    }
+    block_t *b = header(ptr);
+    if (b->free)
+    {
+        msg("my_free: double free detected\n");
+        return;
+    }
+    b->free = 1;
+    coalesce();
+}
 void *my_calloc(size_t nmemb, size_t size)
 {
     (void)nmemb;
