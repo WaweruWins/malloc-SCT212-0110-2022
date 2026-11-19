@@ -78,25 +78,41 @@ static block_t *find_fit(size_t need)
 {
     for (block_t *b = head; b != NULL; b = b->next)
         if (b->free && b->size >= need)
-            return b;                                 /* first fit */
+            return b; /* first fit */
     return NULL;
 }
-
+/* ---------- Task 4: splitting ---------- */
+static void split(block_t *b, size_t need)
+{
+    if (b->size < need + HDR + MIN_PAYLOAD)
+        return;                                             /* remainder too small: give it all */
+    block_t *rest = (block_t *)((char *)payload(b) + need); /* char* arithmetic */
+    rest->size = b->size - need - HDR;
+    rest->free = 1;
+    rest->magic = MAGIC;
+    rest->next = b->next;
+    b->next = rest;
+    b->size = need;
+    if (tail == b)
+        tail = rest;
+}
 /* ---------- API stubs (each task replaces some of these) ---------- */
 void *my_malloc(size_t size)
 {
-    if (size == 0 || size > SIZE_MAX / 2)            /* 0 → NULL; huge → avoid overflow */
+    if (size == 0 || size > SIZE_MAX / 2) /* 0 → NULL; huge → avoid overflow */
         return NULL;
     size_t need = align_up(size);
 
     block_t *b = find_fit(need);
-    if (b == NULL) {
+    if (b == NULL)
+    {
         b = grow(need);
         if (b == NULL)
             return NULL;
     }
+    split(b, need);
     b->free = 0;
-    return payload(b);                                /* the PAYLOAD, never the header */
+    return payload(b); /* the PAYLOAD, never the header */
 }
 void my_free(void *ptr) { (void)ptr; }
 void *my_calloc(size_t nmemb, size_t size)
