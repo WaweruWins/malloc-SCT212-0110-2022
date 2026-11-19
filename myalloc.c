@@ -33,6 +33,7 @@ static int adjacent(block_t *a, block_t *b)
 static block_t *head = NULL;
 static block_t *tail = NULL;
 static size_t heap_total = 0; /* bytes obtained from the OS */
+static fit_policy_t policy = FIT_FIRST;
 
 /* ---------- Task 2: grow the heap ---------- */
 static block_t *grow(size_t need)
@@ -76,10 +77,17 @@ static block_t *grow(size_t need)
 /* ---------- Task 3: placement ---------- */
 static block_t *find_fit(size_t need)
 {
+    block_t *best = NULL;
     for (block_t *b = head; b != NULL; b = b->next)
-        if (b->free && b->size >= need)
-            return b; /* first fit */
-    return NULL;
+    {
+        if (!b->free || b->size < need)
+            continue;
+        if (policy == FIT_FIRST)
+            return b; /* first block that fits */
+        if (best == NULL || b->size < best->size)
+            best = b; /* smallest block that fits */
+    }
+    return best;
 }
 /* ---------- Task 4: splitting ---------- */
 static void split(block_t *b, size_t need)
@@ -220,12 +228,69 @@ void *my_realloc(void *ptr, size_t size)
     my_free(ptr);
     return np;
 }
+/* ---------- Task 7: policy, stats, dump, check ---------- */
+void set_policy(fit_policy_t p)
+{
+    policy = p;
+}
 
 void heap_stats(heap_stats_t *out)
 {
-    if (out)
-        memset(out, 0, sizeof *out);
+    if (out == NULL)
+        return;
+    memset(out, 0, sizeof *out);
+    out->heap_bytes = heap_total;
+    for (block_t *b = head; b != NULL; b = b->next)
+    {
+        out->blocks++;
+        if (b->free)
+        {
+            out->free_bytes += b->size;
+            out->free_blocks++;
+            if (b->size > out->largest_free)
+                out->largest_free = b->size;
+        }
+        else
+        {
+            out->used_bytes += b->size;
+        }
+    }
 }
-void heap_dump(void) {}
-void set_policy(fit_policy_t p) { (void)p; }
-int heap_check(void) { return 1; }
+
+void heap_dump(void)
+{
+    char line[96];
+    size_t i = 0;
+    for (block_t *b = head; b != NULL; b = b->next, i++)
+    {
+        int n = snprintf(line, sizeof line, "[%2zu] %p size=%zu %s\n",
+                         i, payload(b), b->size, b->free ? "FREE" : "USED");
+        if (n > 0)
+        {
+            size_t len = (size_t)n < sizeof line ? (size_t)n : sizeof line - 1;
+            if (write(STDOUT_FILENO, line, len) < 0)
+                return;
+        }
+    }
+}
+
+int heap_check(void)
+{
+    block_t *last = NULL;
+    for (block_t *b = head; b != NULL; b = b->next)
+    {
+        if (b->magic != MAGIC)
+            return 0; /* 1. valid header      */
+        if ((uintptr_t)payload(b) % ALIGN != 0)
+            return 0; /* 2. aligned payload   */
+        if (b->next != NULL)
+        {
+            if ((char *)b->next < (char *)payload(b) + b->size)
+                return 0; /* 3. increasing order  */
+            if (b->free && b->next->free && adjacent(b, b->next))
+                return 0; /* 4. no unmerged pair  */
+        }
+        last = b;
+    }
+    return last == tail;
+}
